@@ -1,0 +1,12 @@
+#!/bin/bash
+#
+# ATMSERVERpickupValue -- find the value associated with a message
+#                      -- only call this with a known message
+#
+#find the value associated with a message
+#                      -- only call this with a known message
+message=$1
+#(
+smileycoin-cli --datadir=/var/local/smileycoin gettransaction $message|
+     grep -m1  amount |
+     sed -e 's/.*: *//' -e 's/\.*0* *,.*//'

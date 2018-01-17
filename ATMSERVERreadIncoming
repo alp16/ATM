@@ -1,0 +1,188 @@
+#/bin/bash
+#
+# ReadIncomingTransaction 
+#        -- input is a TxId 
+#        -- This is a wrapper 
+#        -- just checks what command should be run
+#
+# It may run any of the following (mutually exclusive)
+#
+# DoubleOrNothing       -- input is a TxId -- returns double or nothing to the sender if the amount is being sent to BCJW4iZw7PechFHgtqqSdHmymjnFA6LjNJ OR BEtZyyYqDXqmRJJ45nnL15cuASfiXg9Yik 
+# ATMSERVERsendLTCrate  -- to return the current exchange rate for LTC (in SMLY) if the message was sent from a SMLY wallet with the EXACT command
+#                       -- 'sendwithmessage BLca5pTafbgH7p4ZF3ZzrPSrx6swafXAYf 10000 "get rate buy LTC from SMLY"' 
+# ATMSERVERsendLTC      -- to return LTC at the current exchange rate if the message was sent with 'sendwithmessage address "buy LTC" amount' from a SMLY wallet
+#
+#
+# NOTE: This assumes that there is no wallet passphrase -- otherwise you need to use the wallepassphrase command before signing the transaction
+#
+# 15. Jan 2018
+#
+#------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
+#
+echo "------------------------------------------- ------------------------------------------- ------------------------------------------- ---------"  >> /home/gunnar/atm/log/log.0
+date  >> /home/gunnar/atm/log/log.0
+
+if [ X"$1" = X ]
+then
+  echo Usage $0 TxId  >> /home/gunnar/atm/log/log.0
+  echo  exit >> /home/gunnar/atm/log/log.0
+  exit
+fi
+
+txid=$1
+BetAddress=BCJW4iZw7PechFHgtqqSdHmymjnFA6LjNJ
+BetAddress2=BEtZyyYqDXqmRJJ45nnL15cuASfiXg9Yik 
+echo $0 The incoming TxId is $txid and my addresses are $BetAddress and $BetAddress2 >> /home/gunnar/atm/log/log.0
+#
+# Step 0: Minimal logging
+repeat=`grep $txid /home/gunnar/atm/log/logtxid`
+if [ X"$repeat" != X ]
+then
+  echo $0 duplicate transaction "$txid"  >> /home/gunnar/atm/log/log.0
+  echo  exit >> /home/gunnar/atm/log/log.0
+  exit
+fi
+
+echo $0 $txid >> /home/gunnar/atm/log/logtxid
+echo "$0 Incoming transaction $txid" >> /home/gunnar/atm/log/log.0
+
+#
+# Step 0: Omit the coinbase transactions (dividends etc)
+#
+generated=`smileycoin-cli --datadir=/var/local/smileycoin gettransaction $txid|grep generated|wc -l`
+if [ X"$generated" != X0 ]
+then
+  echo "$0 Transaction $txid is a coinbase transaction" >> /home/gunnar/atm/log/log.0
+  echo exit >> /home/gunnar/atm/log/log.0
+  exit
+fi
+
+#
+# Step 1: Extract some basics for the incoming transaction 
+#
+echo "$0 Continuing with transaction $txid" >> /home/gunnar/atm/log/log.0
+tx=`smileycoin-cli --datadir=/var/local/smileycoin getrawtransaction $txid`
+isBet=`smileycoin-cli --datadir=/var/local/smileycoin decoderawtransaction $tx | awk '/value/{value=$3}
+{if(printnext==1){print $0, value;printnext=0}}
+/addresses/{printnext=1} '|egrep "$BetAddress|$BetAddress2"| sed -e 's/.*"//' -e 's/[ ",]*//g' -e 's/\..*//'`
+isMessage=`smileycoin-cli --datadir=/var/local/smileycoin gettransaction $txid|egrep '100.31415926'|wc -l`
+isToUs=`smileycoin-cli --datadir=/var/local/smileycoin gettransaction $txid|egrep 'BLca5pTafbgH7p4ZF3ZzrPSrx6swafXAYf'|wc -l`
+
+#
+# Step 3: Figure out what this is
+#
+echo "$0 Evaluating whether $txid is a bet: ->$bet<-"  >> /home/gunnar/atm/log/log.0
+if [ X"$isBet" != X ]
+then
+  echo "$0 Transaction $txid is a nonzero bet"  >> /home/gunnar/atm/log/log.0
+  echo  "$0 Fire up game and exit" >> /home/gunnar/atm/log/log.0
+  ($HOME/game/DoubleOrNothing $txid 2>&1 >> /home/gunnar/atm/log/log.0)&
+  exit
+fi
+#
+
+if [ X"$isMessage" != X0 ]
+then
+  message=`/home/gunnar/atm/ATMSERVERpickupMessage $txid|sed 's/ *$//'`
+  echo "$0 Transaction $txid is a message: ->$message<- isToUs: ->$isToUs<-"  >> /home/gunnar/atm/log/log.0
+  value=`/home/gunnar/atm/ATMSERVERpickupValue $txid`
+  echo "Found the total value behind the message: ->$value<-" >> /home/gunnar/atm/log/log.0  # use this to verify appropriate amounts etc
+  if [ X"$isToUs" != X0 ]
+  then
+    echo "Transaction $txid is a message to us"  >> /home/gunnar/atm/log/log.0
+    echo  "Fire up ATMSERVERpickupRate to prepare ourselves" >> /home/gunnar/atm/log/log.0
+    LTCrate=`/home/gunnar/atm/ATMSERVERpickupRate`
+    echo "Read the message and start up something"  >> /home/gunnar/atm/log/log.0
+    if [ X"$message" = X"get rate buy LTC from SMLY" ]
+    then
+      echo "This is a request for an exchange rate"  >> /home/gunnar/atm/log/log.0
+      response=`echo "1 LTC=$LTCrate SMLY"`
+      echo "Response: $LTCrate">> /home/gunnar/atm/log/log.0
+      recipient=`/home/gunnar/atm/ATMSERVERgetReturnAddress $txid`
+      if [ "$recipient" = "ERROR" ]
+      then 
+        echo "Could not find a valid recipient address" >> /home/gunnar/atm/log/log.0
+        exit
+      fi
+      if [ $value -ge 10000 ]
+      then
+        echo Running: smileycoin-cli --datadir=/var/local/smileycoin sendwithmessage $recipient 7500 "$response"  >> /home/gunnar/atm/log/log.0
+        smileycoin-cli --datadir=/var/local/smileycoin sendwithmessage $recipient 7500 "$response"  >> /home/gunnar/atm/log/log.0
+      else
+        echo "ERROR: Value too low to justify returning the rate" >> /home/gunnar/atm/log/log.0
+      fi
+      exit
+    fi
+    # Try to extract a LTC address etc from the message: Should simply be "Buy LTC ltcAddress" and then the value
+    set - $message
+    if [ X"$1 $2" = X"Buy LTC" ]
+    then 
+       recipient="$3"
+       echo "$0 We have a request to buy LTC for $value SMLY - so verify the address" >> /home/gunnar/atm/log/log.0
+       ans=`litecoin-cli --datadir=/var/local/litecoin validateaddress "$recipient" |grep isvalid|grep true|wc -l`
+       echo -n 3 >> /home/gunnar/atm/log/log.0
+       if [ "$ans" != 1 ]
+       then
+         echo "ERROR - ->$recipient<- is not a valid LTC address" >> /home/gunnar/atm/log/log.0
+         echo "Got ->$ans<- and should have gotten ->1<-" >> /home/gunnar/atm/log/log.0
+         exit 0
+       fi
+       # We have a valid request for LTC 
+       echo computing "valueLTC echo scale=8;$value / $LTCrate" >> /home/gunnar/atm/log/log.0
+       valueLTC=`echo "scale=8;x=$value / $LTCrate;if(x<1) print 0; x"|bc` # createrawtransaction needs 0., not just .
+       echo "$0 Starting up a transfer of ->$valueLTC<- LTC for ->$value<- SMLY"  >> /home/gunnar/atm/log/log.0
+       
+       echo litecoin-cli --datadir=/var/local/litecoin sendtoaddress $recipient $valueLTC >> /home/gunnar/atm/log/log.0
+       output=`(litecoin-cli --datadir=/var/local/litecoin sendtoaddress $recipient $valueLTC 2>&1)`
+       echo "$0 LTC transaction specified in $txid gave output ->$output<-" >> /home/gunnar/atm/log/log.0
+       echo  "$0 normal exit -  for $txid end"  >> /home/gunnar/atm/log/log.0
+       exit
+    fi
+   echo "$0 ERROR: Message does not correspond to a request"  >> /home/gunnar/atm/log/log.0
+  fi
+  echo "----------------------------------------------------" >> /home/gunnar/atm/log/log.0
+  exit
+fi
+
+# should never get here
+exit
+#
+# Step 4: Extract the return address
+#
+echo find the  $txid return address  >> /home/gunnar/atm/log/log.0
+pubkey=`smileycoin-cli --datadir=/var/local/smileycoin decoderawtransaction $tx | sed -e '1,/vin/d' -e '/vout/,$d'|grep txid|sed -e 's/",//' -e 's/.*"//'|head -1`
+echo The pubkey of the $txid sender is $pubkey  >> /home/gunnar/atm/log/log.0
+senderTxID=`smileycoin-cli --datadir=/var/local/smileycoin decoderawtransaction $tx|grep txid|head -2|tail -1|sed -e 's/",//' -e 's/.*"//'`
+echo The utxo of the  $txid sender is $senderTxID  >> /home/gunnar/atm/log/log.0
+senderVout=`smileycoin-cli --datadir=/var/local/smileycoin decoderawtransaction $tx|grep vout|head -1 |sed -e 's/",//' -e 's/.*"//' -e 's/[ :,]*//g'`
+echo The $txid  sender vout is $senderVout  >> /home/gunnar/atm/log/log.0
+senderTxID=`smileycoin-cli --datadir=/var/local/smileycoin decoderawtransaction $tx|grep txid|head -2|tail -1|sed -e 's/",//' -e 's/.*"//'`
+senderTx=`smileycoin-cli --datadir=/var/local/smileycoin getrawtransaction $senderTxID`
+echo "The $txid  sender TxID is $senderTxID"  >> /home/gunnar/atm/log/log.0
+recipient=`smileycoin-cli --datadir=/var/local/smileycoin decoderawtransaction $senderTx| sed -n -e '/ *"n" *: *'"$senderVout/,/]/p" | sed -e 1d| sed '/]/,$d'|tail -1| sed 's/[ ",]*//g'`
+echo "The $txid  sender address was ->$recipient<- and this will be the recipient of ->$winnings<- SMLY"  >> /home/gunnar/atm/log/log.0
+echo -n testing 1 >> /home/gunnar/atm/log/log.0
+if [ X"$recipient" = X ]
+then
+  echo "ERROR: Transaction $txid did not have a recipient for the winnings ->$recipient<-"  >> /home/gunnar/atm/log/log.0
+  echo  exit >> /home/gunnar/atm/log/log.0
+  exit
+fi
+echo -n 2 >> /home/gunnar/atm/log/log.0
+ans=`smileycoin-cli --datadir=/var/local/smileycoin validateaddress "$recipient" |grep isvalid|grep true|wc -l`
+echo -n 3 >> /home/gunnar/atm/log/log.0
+if [ "$ans" != 1 ]
+then
+  echo "ERROR - ->$recipient<- is not a valid SMLY address" >> /home/gunnar/atm/log/log.0
+  echo "Got ->$ans<- and should have gotten ->1<-" >> /home/gunnar/atm/log/log.0
+  exit 0
+fi
+echo -n 4 >> /home/gunnar/atm/log/log.0
+
+cmd="smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipient $winnings"
+echo "Sending $txid winnings by running: $cmd"  >> /home/gunnar/atm/log/log.0
+#echo Winnings to $txid gave output: >> /home/gunnar/atm/log/log.0
+#(smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipient $winnings 2>&1) >> /home/gunnar/atm/log/log.0
+output=`(smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipient $winnings 2>&1)`
+echo "Winnings to $txid gave output ->$output<-" >> /home/gunnar/atm/log/log.0
+echo  normal exit -  for $txid end  >> /home/gunnar/atm/log/log.0

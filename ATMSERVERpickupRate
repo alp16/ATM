@@ -1,0 +1,36 @@
+#!/bin/bash
+#
+# ATMSERVERpickupRate -- picks up the rates of SMLY and LTC and compute the # of SMLY in one LTC
+smlyPrice=`curl -s https://api.coinmarketcap.com/v1/ticker/smileycoin/|grep price_usd|sed -e 's/",//' -e 's/.*"//'`
+ltcPrice=`curl -s https://api.coinmarketcap.com/v1/ticker/litecoin/|grep price_usd|sed -e 's/",//' -e 's/.*"//'`
+
+amountLTC=1
+# OK=`echo $amountLTC|awk '/^[0-9\.]+$/{OK=0;if($1>0&&$1<=1)OK=1;print OK}'`
+# echo "$0 Got OK=$OK" >> /home/gunnar/atm/log/log.0
+# if [ "$OK" != "1" ]
+# then
+#   echo "$0 ERROR in $txid -- got amountLTC: ->$amountLTC<- --> must be between 0 and 1 LTC" >> /home/gunnar/atm/log/log.0
+#   exit 1
+# fi
+
+
+# Set a reasonable default and use this if we don't get a reasonable response from coinmarketcap
+rate=5000000
+if [ X"$ltcPrice" != X -a X"$smlyPrice" != X ]
+then
+  echo "$0 About to compute the rate based on x=$ltcPrice/$smlyPrice;x" >> /home/gunnar/atm/log/log.0
+  rate=`echo "x=0.95*$ltcPrice/$smlyPrice;x" |bc` # SMLY per LTC
+  echo "$0 Got rate: $rate" >> /home/gunnar/atm/log/log.0
+fi
+# rate=0.000001  # LTC per SMLY
+#amountSMLY=`echo $amountLTC / $rate | bc`
+# MISSING here is a check in whether the rate is actually a nonzero number
+echo "$0 About to compute the amountSMLY based on $amountLTC * $rate  " >> /home/gunnar/atm/log/log.0
+amountSMLY=`echo "$amountLTC * $rate" | bc`
+echo "$0 Recipient address (hex): $8" >> /home/gunnar/atm/log/log.0
+echo Recipient address: $recipientSMLYAddress >> /home/gunnar/atm/log/log.0
+echo "$0 Amount LTC $amountLTC" >> /home/gunnar/atm/log/log.0
+echo "$0 Amount SMLY $amountSMLY" >> /home/gunnar/atm/log/log.0
+echo $0 AOK >> /home/gunnar/atm/log/log.0
+# return the rate
+echo $amountSMLY

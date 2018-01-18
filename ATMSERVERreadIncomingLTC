@@ -1,0 +1,131 @@
+#/bin/bash
+#
+# ATMSERVERreadIncomingLTC -- input is a LTC TxId -- returns SMLY to the sender
+##                         -- this is an ATM for dispensing SMLY
+#
+#
+# NOTE: This assumes that there is no wallet passphrase -- otherwise you need to use the wallepassphrase command before signing the transaction
+#
+# 1. Dec 2017
+#
+#----------------------------------------------------------------
+#
+# Monitoring a single address to receive the LTC
+# Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z
+#
+#------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
+#
+# Algorithm:
+# 1 Multiple checks to see whether this is definitely a SMLY request, i.e. exactly 0.045 LTC sent to Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z
+#   The models TxID is 195df334c5e6e5365ee4cfd6c2897e87de5430ad185749734e19e8f2685142ba
+# 2 if not then stop
+# 3 Extract a return address (the SMLY address given as the OP_RETURN data in the LTC transaction)
+# 4 Find the smallest SMLY utxo which covers the SMLY to be sent
+# 5 Send back the SMLY
+#
+#------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
+#
+echo "------------------------------------------- ------------------------------------------- ------------------------------------------- ---------"  >> /home/gunnar/bootstrap/log/log.0
+date  >> /home/gunnar/bootstrap/log/log.0
+echo "I am $0 being run from $$ and called with arguments $*" >> /home/gunnar/bootstrap/log/log.0
+echo "Running on host" >> /home/gunnar/bootstrap/log/log.0
+hostname >> /home/gunnar/bootstrap/log/log.0
+
+myLTCAddress=Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z
+
+if [ X"$1" = X ]
+then
+  echo Usage $0 TxId  >> /home/gunnar/bootstrap/log/log.0
+  echo  exit >> /home/gunnar/bootstrap/log/log.0
+  exit 1
+fi
+
+txid=$1
+
+#
+# Step 1: Check for duplicates - if so, just stop
+#
+repeat=`grep $txid /home/gunnar/bootstrap/log/logtxid`
+if [ X"$repeat" != X ]
+then
+  echo duplicate transaction "$txid"  >> /home/gunnar/bootstrap/log/log.0
+  echo  exit >> /home/gunnar/bootstrap/log/log.0
+  exit 1
+fi
+
+#
+# Step 2: Minimal logging
+#
+echo $txid >> /home/gunnar/bootstrap/log/logtxid
+echo "Incoming transaction $txid" >> /home/gunnar/bootstrap/log/log.0
+
+#
+# Step 3: Extract everything we need from the transaction
+#
+echo The incoming TxId is $txid and my LTC address is $myLTCAddress  >> /home/gunnar/bootstrap/log/log.0
+tx=`litecoin-cli --datadir=/var/local/litecoin getrawtransaction $txid`
+stuff=`litecoin-cli --datadir=/var/local/litecoin decoderawtransaction $tx|egrep 'value|OP_RETURN|"L[a-z0-9A-Z]*"'| tr '\012' ' '`
+
+# stuff is now a string of the form
+# "value": 0.04500000, "Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z" "value": 0.00000000, "asm": "OP_RETURN 425257426e6337587a755044316e7266744444334650724c714a33466952575a6d68", "value": 0.74740803, "LQA7RE17tFePr57zazXXPCWK7JiooGxtTf"
+# This is exactly 11 words, and several have to be exactly one thing so just check all of that
+echo "Got stuff:" >> /home/gunnar/bootstrap/log/log.0
+echo "->$stuff<-" >> /home/gunnar/bootstrap/log/log.0
+checkLen=`echo $stuff|wc -w` #should be 11
+echo "of length $checkLen" >> /home/gunnar/bootstrap/log/log.0
+if [ "$checkLen" -ne "11" ]
+then
+  echo wrong input, got "$checkLen" but wanted "11" - exit >> /home/gunnar/bootstrap/log/log.0
+  exit 1
+fi
+# Now have exactly 11 words
+set - $stuff
+echo 1 $1 2 $2 3 $3 4 $4 5 $5 6 $6 7 $7 8 $8 9 $9 10 $10 >> /home/gunnar/bootstrap/log/log.0
+
+#if [ $1 != '"value":'  -o $2 != "0.04500000," -o $3 != '"'"$myLTCAddress"'"' -o $7 != '"OP_RETURN' ] # restricte the LTC value
+if [ $1 != '"value":'  -o $3 != '"'"$myLTCAddress"'"' -o $7 != '"OP_RETURN' ]
+then
+  echo wrong input - exit >> /home/gunnar/bootstrap/log/log.0
+  exit 1
+fi
+
+recipientSMLYAddress=`echo $8 |xxd -r -p; echo ""`
+amountLTC=`echo $2 | sed 's/,//'`
+smlyPrice=`curl -s https://api.coinmarketcap.com/v1/ticker/smileycoin/|grep price_usd|sed -e 's/",//' -e 's/.*"//'`
+ltcPrice=`curl -s https://api.coinmarketcap.com/v1/ticker/litecoin/|grep price_usd|sed -e 's/",//' -e 's/.*"//'`
+
+OK=`echo $amountLTC|awk '/^[0-9\.]+$/{OK=0;if($1>0&&$1<=1)OK=1;print OK}'`
+echo "Got OK=$OK"
+if [ "$OK" != "1" ]
+then
+  echo "ERROR in $txid -- got amountLTC: ->$amountLTC<- --> must be between 0 and 1 LTC" >> /home/gunnar/bootstrap/log/log.0
+  exit 1
+fi
+
+
+# Set a reasonable default and use this if we don't get a reasonable response from coinmarketcap
+rate=5000000
+if [ X"$ltcPrice" != X -a X"$smlyPrice" != X ]
+then
+  echo "About to compute the rate based on x=$ltcPrice/$smlyPrice;x" >> /home/gunnar/bootstrap/log/log.0
+  rate=`echo "x=0.99*$ltcPrice/$smlyPrice;x" |bc` # SMLY per LTC
+  echo "Got rate: $rate" >> /home/gunnar/bootstrap/log/log.0
+fi
+# rate=0.000001  # LTC per SMLY
+#amountSMLY=`echo $amountLTC / $rate | bc`
+# MISSING here is a check in whether the rate is actually a nonzero number
+echo "About to compute the amountSMLY based on $amountLTC * $rate  " >> /home/gunnar/bootstrap/log/log.0
+amountSMLY=`echo "$amountLTC * $rate" | bc`
+echo "Recipient address (hex): $8" >> /home/gunnar/bootstrap/log/log.0
+echo Recipient address: $recipientSMLYAddress >> /home/gunnar/bootstrap/log/log.0
+echo "Amount LTC $amountLTC" >> /home/gunnar/bootstrap/log/log.0
+echo "Amount SMLY $amountSMLY" >> /home/gunnar/bootstrap/log/log.0
+echo AOK >> /home/gunnar/bootstrap/log/log.0
+
+echo "About to do the transfer"  >> /home/gunnar/bootstrap/log/log.0
+echo smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipientSMLYAddress $amountSMLY >> /home/gunnar/bootstrap/log/log.0
+echo with output: >> /home/gunnar/bootstrap/log/log.0
+#echo Hit return to actually do the transfer
+#read ans
+(smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipientSMLYAddress $amountSMLY 2>&1) >> /home/gunnar/bootstrap/log/log.0
+echo  normal exit - end  >> /home/gunnar/bootstrap/log/log.0

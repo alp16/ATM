@@ -7,6 +7,6 @@
 #                      -- only call this with a known message
 message=$1
 #(
-smileycoin-cli --datadir=/var/local/smileycoin gettransaction $message|
+smileycoin-cli  gettransaction $message|
      grep -m1  amount |
      sed -e 's/.*: *//' -e 's/\.*0* *,.*//'

@@ -2,14 +2,14 @@
 #
 # ATMUSERreadSMLYmsg -- find and read all incoming messages
 #
-messages=`smileycoin-cli --datadir=/var/local/smileycoin listtransactions "" 999999 0 |awk '/amount/{amount=$3}
+messages=`smileycoin-cli  listtransactions "" 999999 0 |awk '/amount/{amount=$3}
 /txid/{txid=$3;print txid,amount}'|tr -s '",' ' '|awk '/ 100.31415926/{print $1 }'` 
 echo Found messages:
 echo $messages
 (for message in $messages
 do
   #echo $message
-  smileycoin-cli --datadir=/var/local/smileycoin gettransaction $message|
+  smileycoin-cli  gettransaction $message|
     grep amount|
     tr -s ':",' ' '|
     sed 's/\./ /' |

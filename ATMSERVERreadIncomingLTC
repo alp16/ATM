@@ -79,8 +79,8 @@ echo "Incoming transaction $txid" >> /home/gunnar/atm/log/logATM.0
 # Step 3: Extract everything we need from the transaction
 #
 echo The incoming TxId is $txid and my LTC address is $myLTCAddress  >> /home/gunnar/atm/log/logATM.0
-tx=`litecoin-cli --datadir=/var/local/litecoin getrawtransaction $txid`
-stuff=`litecoin-cli --datadir=/var/local/litecoin decoderawtransaction $tx|egrep 'value|OP_RETURN|"L[a-z0-9A-Z]*"'| tr '\012' ' '`
+tx=`litecoin-cli  getrawtransaction $txid`
+stuff=`litecoin-cli  decoderawtransaction $tx|egrep 'value|OP_RETURN|"L[a-z0-9A-Z]*"'| tr '\012' ' '`
 
 # stuff is now a string of the form
 # "value": 0.04500000, "Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z" "value": 0.00000000, "asm": "OP_RETURN 425257426e6337587a755044316e7266744444334650724c714a33466952575a6d68", "value": 0.74740803, "LQA7RE17tFePr57zazXXPCWK7JiooGxtTf"
@@ -139,9 +139,9 @@ echo "Amount SMLY $amountSMLY" >> /home/gunnar/atm/log/logATM.0
 echo AOK >> /home/gunnar/atm/log/logATM.0
 
 echo "About to do the transfer"  >> /home/gunnar/atm/log/logATM.0
-echo smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipientSMLYAddress $amountSMLY >> /home/gunnar/atm/log/logATM.0
+echo smileycoin-cli  sendtoaddress $recipientSMLYAddress $amountSMLY >> /home/gunnar/atm/log/logATM.0
 echo with output: >> /home/gunnar/atm/log/logATM.0
 #echo Hit return to actually do the transfer
 #read ans
-(smileycoin-cli --datadir=/var/local/smileycoin sendtoaddress $recipientSMLYAddress $amountSMLY 2>&1) >> /home/gunnar/atm/log/logATM.0
+(smileycoin-cli  sendtoaddress $recipientSMLYAddress $amountSMLY 2>&1) >> /home/gunnar/atm/log/logATM.0
 echo  normal exit - end  >> /home/gunnar/atm/log/logATM.0

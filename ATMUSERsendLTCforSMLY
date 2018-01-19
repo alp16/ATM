@@ -5,7 +5,8 @@
 #                    -- creates a transaction with a SMLY address as a message and embeds into the LTC blockchain
 #                    -- a black box operates someplace to return the SMLY
 #
-# NOTE: This assumes that there is no LTC wallet passphrase -- i.e. you need to use the wallepassphrase command before signing the transaction
+# NOTE1: This assumes that litecoin-cli is in your PATH variable
+# NOTE2: This assumes that there is no LTC wallet passphrase -- i.e. you need to use the wallepassphrase command before signing the transaction
 #
 # 20. Dec 2017
 #
@@ -42,8 +43,8 @@ fi
 # We need a SMLY recipient address for the remote SMLY demon to send stuff back to
 # This is one of our own addresses -- to be transmitted on the LTC chain, coded in the LTC transaction
 # We also need a LTC change address if the utxo is too high -- also one of our own addresses
-recipient=`smileycoin-cli --datadir=/var/local/smileycoin getnewaddress`
-myChangeAddress=`litecoin-cli --datadir=/var/local/litecoin getnewaddress`
+recipient=`smileycoin-cli  getnewaddress`
+myChangeAddress=`litecoin-cli  getnewaddress`
 #
 echo "Requesting the use of $recipient as my (coded) return address to receive SMLY"
 echo "Sending LTC change, from outgoing LTC transaction, to my $myChangeAddress"
@@ -58,7 +59,7 @@ echo "Intend to buy SMLY for $forPurchase, fee is $fee so need a total of $value
 #
 # Next find a single utxo which is at least that much, but as close as possible
 # This will ONLY WORK IF there is a single utxo which has enough LTC
-list=`litecoin-cli --datadir=/var/local/litecoin listunspent |
+list=`litecoin-cli  listunspent |
   sed -e 's/[:,"]//g'|
   awk '/txid/{txid=$2}
        /vout/{vout=$2}
@@ -82,21 +83,21 @@ echo "change: $myChange= $valueAvailable - $valueNeeded"
 recipientHex=`echo -n "$recipient" | xxd -ps |tr '\012' ' '|sed 's/ //g'` # hex version of SMLY address, for OP_RETURN data
 
 # Now create the complete raw transaction 
-creatCmd=`echo litecoin-cli --datadir=/var/local/litecoin createrawtransaction \''[{"txid":"'$txid'","vout":'$vout'}]'\' \''{"Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z":'$forPurchase',"data":"'$recipientHex'","'$myChangeAddress'":'$myChange'}'\' `
+creatCmd=`echo litecoin-cli  createrawtransaction \''[{"txid":"'$txid'","vout":'$vout'}]'\' \''{"Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z":'$forPurchase',"data":"'$recipientHex'","'$myChangeAddress'":'$myChange'}'\' `
 
 echo $creatCmd|cat
 echo $creatCmd  > 05c-createrawtransaction-message-b-creatCmd.txt
 echo "Put the createrawtransaction command into 05c-createrawtransaction-message-b-creatCmd.txt"
 trans=`echo $creatCmd|sh`
-litecoin-cli --datadir=/var/local/litecoin decoderawtransaction $trans > 05c-createrawtransaction-message-x-unsign.txt
+litecoin-cli  decoderawtransaction $trans > 05c-createrawtransaction-message-x-unsign.txt
 echo The unsigned transaction is in 05c-createrawtransaction-message-x-unsign.txt
-echo litecoin-cli --datadir=/var/local/litecoin signrawtransaction $trans
-signedJSON=`litecoin-cli --datadir=/var/local/litecoin signrawtransaction $trans`
+echo litecoin-cli  signrawtransaction $trans
+signedJSON=`litecoin-cli  signrawtransaction $trans`
 signed=`echo $signedJSON | tr ':,"' ' ' | sed -e 's/.*hex *//' -e 's/ .*//'`
-litecoin-cli --datadir=/var/local/litecoin decoderawtransaction $signed > 05c-createrawtransaction-message-y-signed.txt
-echo litecoin-cli --datadir=/var/local/litecoin sendrawtransaction $signed
-litecoin-cli --datadir=/var/local/litecoin decoderawtransaction $signed > 05c-createrawtransaction-message-z-toSend.txt
+litecoin-cli  decoderawtransaction $signed > 05c-createrawtransaction-message-y-signed.txt
+echo litecoin-cli  sendrawtransaction $signed
+litecoin-cli  decoderawtransaction $signed > 05c-createrawtransaction-message-z-toSend.txt
 echo "Hit return to actually send the transaction"
 read ans
-litecoin-cli --datadir=/var/local/litecoin sendrawtransaction "$signed"
+litecoin-cli  sendrawtransaction "$signed"
 

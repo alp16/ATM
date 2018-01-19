@@ -76,7 +76,7 @@ if [ X"$isBet" != X ]
 then
   echo "$0 Transaction $txid is a nonzero bet"  >> /home/gunnar/atm/log/log.0
   echo  "$0 Fire up game and exit" >> /home/gunnar/atm/log/log.0
-  ($HOME/game/DoubleOrNothing $txid 2>&1 >> /home/gunnar/atm/log/log.0)&
+  ($HOME/atm/ATMDoubleOrNothing $txid 2>&1 >> /home/gunnar/atm/log/log.0)&
   exit
 fi
 #

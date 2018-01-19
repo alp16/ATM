@@ -1,0 +1,135 @@
+#/bin/bash
+#
+# ATMDoubleOrNothing -- input is a TxId -- returns double or nothing to the sender
+#
+#
+# NOTE: This assumes that there is no wallet passphrase -- otherwise you need to use the wallepassphrase command before signing the transaction
+#
+# 24. Nov 2017
+#
+#----------------------------------------------------------------
+#
+# Monitoring a single address to receive the bets
+# BETsLuvMwCYY7F6VbmXF8qDJuAbFn7k9FY
+#
+#------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
+#
+# Algorithm:
+# 1 Generate a random integer, 0<n<99 -> win if n>50 else lose
+# 2 if lose then stop
+# 3 Extract a return address (the first input address)
+# 4 Find the smallest utxo which covers the winnings=double amount bet
+# 5 Send back the winnings
+#
+#------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
+#
+echo "------------------------------------------- ------------------------------------------- ------------------------------------------- ---------"  >> /home/gunnar/atm/log/gamelog.0
+date  >> /home/gunnar/atm/log/gamelog.0
+
+if [ X"$1" = X ]
+then
+  echo Usage $0 TxId  >> /home/gunnar/atm/log/gamelog.0
+  echo  exit >> /home/gunnar/atm/log/gamelog.0
+  exit
+fi
+
+txid=$1
+myAddress=BCJW4iZw7PechFHgtqqSdHmymjnFA6LjNJ
+myAddress2=BEtZyyYqDXqmRJJ45nnL15cuASfiXg9Yik
+echo $$ $0 The incoming TxId is $txid and my addresses are $myAddress and $myAddress2 >> /home/gunnar/atm/log/gamelog.0
+#
+# Step 0: Minimal logging
+repeat=`grep $txid /home/gunnar/atm/log/gamelogtxid`
+if [ X"$repeat" != X ]
+then
+  echo $$ $0 duplicate transaction "$txid"  >> /home/gunnar/atm/log/gamelog.0
+  echo $$ $0  exit >> /home/gunnar/atm/log/gamelog.0
+  exit
+fi
+
+echo "$$ $0 $txid" >> /home/gunnar/atm/log/gamelogtxid
+echo "$$ $0 Incoming transaction $txid" >> /home/gunnar/atm/log/gamelog.0
+
+#
+# Step 0: Omit the coinbase transactions (dividends etc)
+#
+generated=`smileycoin-cli  gettransaction $txid|grep generated|wc -l`
+if [ X"$generated" != X0 ]
+then
+  echo "$$ $0 Transaction $txid is a coinbase transaction" >> /home/gunnar/atm/log/gamelog.0
+  echo exit >> /home/gunnar/atm/log/gamelog.0
+  exit
+fi
+
+#
+# Step 1: Generate the random number
+#
+if [ `grep -m2 -ao '[0-9][0-9]' /dev/urandom | head -1` -le 50 ]
+then
+  echo $$ $0 lose and exit without checking whether $txid is a bet >> /home/gunnar/atm/log/gamelog.0
+  echo $$ $0 exit >> /home/gunnar/atm/log/gamelog.0
+  exit
+fi
+echo $$ $0 continuing - check whether $txid contains a bet or not  >> /home/gunnar/atm/log/gamelog.0
+
+#
+# Step 2: Extract some basics for the incoming transaction (the bet)
+#
+echo "$$ $0 Continuing with transaction $txid" >> /home/gunnar/atm/log/gamelog.0
+tx=`smileycoin-cli  getrawtransaction $txid`
+bet=`smileycoin-cli  decoderawtransaction $tx | awk '/value/{value=$3}
+{if(printnext==1){print $0, value;printnext=0}}
+/addresses/{printnext=1} '|egrep "$myAddress|$myAddress2"| sed -e 's/.*"//' -e 's/[ ",]*//g' -e 's/\..*//'`
+echo "$$ $0 Evaluating whether $txid is a bet: ->$bet<-"  >> /home/gunnar/atm/log/gamelog.0
+if [ X"$bet" = X ]
+then
+  echo "$$ $0 Transaction $txid is not a nonzero bet"  >> /home/gunnar/atm/log/gamelog.0
+  echo  "$$ $0 exit"  >> /home/gunnar/atm/log/gamelog.0
+  exit
+fi
+#
+# Step 3: Compute the winnings
+#
+winnings=`expr $bet \* 2`
+echo "$$ $0 The bet $txid made is ->$bet<- and the winnings are $winnings SMLY and the fee will be 1 SMLY" >> /home/gunnar/atm/log/gamelog.0
+
+#
+# Step 4: Extract the return address
+#
+echo "$$ $0 find the  $txid return address"  >> /home/gunnar/atm/log/gamelog.0
+pubkey=`smileycoin-cli  decoderawtransaction $tx | sed -e '1,/vin/d' -e '/vout/,$d'|grep txid|sed -e 's/",//' -e 's/.*"//'|head -1`
+echo "$$ $0 The pubkey of the $txid sender is $pubkey"  >> /home/gunnar/atm/log/gamelog.0
+senderTxID=`smileycoin-cli  decoderawtransaction $tx|grep txid|head -2|tail -1|sed -e 's/",//' -e 's/.*"//'`
+echo "$$ $0 The utxo of the  $txid sender is $senderTxID"  >> /home/gunnar/atm/log/gamelog.0
+senderVout=`smileycoin-cli  decoderawtransaction $tx|grep vout|head -1 |sed -e 's/",//' -e 's/.*"//' -e 's/[ :,]*//g'`
+echo "$$ $0 The $txid  sender vout is $senderVout"  >> /home/gunnar/atm/log/gamelog.0
+senderTxID=`smileycoin-cli  decoderawtransaction $tx|grep txid|head -2|tail -1|sed -e 's/",//' -e 's/.*"//'`
+senderTx=`smileycoin-cli  getrawtransaction $senderTxID`
+echo "$$ $0 The $txid  sender TxID is $senderTxID"  >> /home/gunnar/atm/log/gamelog.0
+recipient=`smileycoin-cli  decoderawtransaction $senderTx| sed -n -e '/ *"n" *: *'"$senderVout/,/]/p" | sed -e 1d| sed '/]/,$d'|tail -1| sed 's/[ ",]*//g'`
+echo "$$ $0 The $txid  sender address was ->$recipient<- and this will be the recipient of ->$winnings<- SMLY"  >> /home/gunnar/atm/log/gamelog.0
+#echo -n testing 1 >> /home/gunnar/atm/log/gamelog.0
+if [ X"$recipient" = X ]
+then
+  echo "$$ $0 ERROR: Transaction $txid did not have a recipient for the winnings ->$recipient<-"  >> /home/gunnar/atm/log/gamelog.0
+  echo  "$$ $0 exit"  >> /home/gunnar/atm/log/gamelog.0
+  exit
+fi
+#echo -n 2 >> /home/gunnar/atm/log/gamelog.0
+ans=`smileycoin-cli  validateaddress "$recipient" |grep isvalid|grep true|wc -l`
+#echo -n 3 >> /home/gunnar/atm/log/gamelog.0
+if [ "$ans" != 1 ]
+then
+  echo "$$ $0 ERROR - ->$recipient<- is not a valid SMLY address" >> /home/gunnar/atm/log/gamelog.0
+  echo "$$ $0 Got ->$ans<- and should have gotten ->1<-" >> /home/gunnar/atm/log/gamelog.0
+  exit 0
+fi
+#echo -n 4 >> /home/gunnar/atm/log/gamelog.0
+
+cmd="smileycoin-cli  sendtoaddress $recipient $winnings"
+echo "$$ $0 Sending $txid winnings by running: $cmd"  >> /home/gunnar/atm/log/gamelog.0
+#echo Winnings to $txid gave output: >> /home/gunnar/atm/log/gamelog.0
+#(smileycoin-cli  sendtoaddress $recipient $winnings 2>&1) >> /home/gunnar/atm/log/gamelog.0
+output=`(smileycoin-cli  sendtoaddress $recipient $winnings 2>&1)`
+echo "$$ $0 Winnings to $txid gave output ->$output<-" >> /home/gunnar/atm/log/gamelog.0
+echo  "$$ $0 normal exit -  for $txid end"  >> /home/gunnar/atm/log/gamelog.0

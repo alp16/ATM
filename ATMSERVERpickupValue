@@ -2,11 +2,27 @@
 #
 # ATMSERVERpickupValue -- find the value associated with a message
 #                      -- only call this with a known message
+#                      -- only works for BLca5pTafbgH7p4ZF3ZzrPSrx6swafXAYf
+#find the value associated with a txId
+#                      -- only call this with a known message Tx
+#                      -- or with a known address in a Tx
+# 
 #
-#find the value associated with a message
-#                      -- only call this with a known message
-message=$1
+txId=$1
+shift
+atmSMLY=BLca5pTafbgH7p4ZF3ZzrPSrx6swafXAYf
+if [ "X$1" != "X" ]
+then
+    atmSMLY=$1
+fi
+
 #(
-smileycoin-cli  gettransaction $message|
-     grep -m1  amount |
-     sed -e 's/.*: *//' -e 's/\.*0* *,.*//'
+smileycoin-cli  gettransaction $txId|
+    sed 's/[",:]//g'|
+    awk '/address/{address=$2}
+         /amount/{if($2>0)sum[address]+=$2}
+         END{print sum["'$atmSMLY'"]}'
+
+#smileycoin-cli  gettransaction $txId|
+#     grep -m1  amount |
+#     sed -e 's/.*: *//' -e 's/\.*0* *,.*//'

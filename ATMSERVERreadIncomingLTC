@@ -15,8 +15,9 @@
 # 1. Dec 2017 - done under a "bootstrap" name
 # 18.Jan 2018 - set up as a part of the ATM collection
 #
-# Basic methodology:
-# --> just keep the SMLY chain for information exchange
+# Original intent:
+# --> use the SMLY chain for information exchange
+# --> also sell SMLY using sendwithmessage
 # --> other coins only get two scripts
 #           User side:     Send x of X to buy SMLY
 #           Server side:   Read chain X
@@ -26,13 +27,14 @@
 #
 #----------------------------------------------------------------
 #
-# Monitoring a single address to receive the LTC
+# Monitoring two LTC addresses to receive the LTC with embedded data field
 # Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z
+# LSMLY5THQnixgpZJxphcHMRPMJ7CD8htEq  # much better
 #
 #------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
 #
 # Algorithm:
-# 1 Multiple checks to see whether this is definitely a SMLY request, i.e. exactly 0.045 LTC sent to Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z
+# 1 Multiple checks to see whether this is definitely a SMLY request, i.e. exactly 0.045 LTC sent to Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z or LSMLY5THQnixgpZJxphcHMRPMJ7CD8htEq
 #   The models TxID is 195df334c5e6e5365ee4cfd6c2897e87de5430ad185749734e19e8f2685142ba
 # 2 if not then stop
 # 3 Extract a return address (the SMLY address given as the OP_RETURN data in the LTC transaction)
@@ -41,18 +43,21 @@
 #
 #------------------------------------------- ------------------------------------------- ------------------------------------------- -------------------------------------------
 #
-echo "------------------------------------------- ------------------------------------------- ------------------------------------------- ---------"  >> /home/gunnar/atm/log/logATM.0
-date  >> /home/gunnar/atm/log/logATM.0
-echo "I am $0 being run from $$ and called with arguments $*" >> /home/gunnar/atm/log/logATM.0
-echo "Running on host" >> /home/gunnar/atm/log/logATM.0
-hostname >> /home/gunnar/atm/log/logATM.0
+echo "------------------------------------------- ------------------------------------------- ------------------------------------------- ---------"  >> /home/gunnar/atm/log/log.0
+date  >> /home/gunnar/atm/log/log.0
+echo "I am $0 being run from $$ and called with arguments ->$*<-" >> /home/gunnar/atm/log/log.0
+echo -n  "$$ $0 Running on host" >> /home/gunnar/atm/log/log.0
+hostname >> /home/gunnar/atm/log/log.0
+echo -n "$$ $0 working directory" >> /home/gunnar/atm/log/log.0
+pwd >> /home/gunnar/atm/log/log.0
 
 myLTCAddress=Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z
+myLTCAddress2=LSMLY5THQnixgpZJxphcHMRPMJ7CD8htEq
 
 if [ X"$1" = X ]
 then
-  echo Usage $0 TxId  >> /home/gunnar/atm/log/logATM.0
-  echo  exit >> /home/gunnar/atm/log/logATM.0
+  echo Usage $0 TxId  >> /home/gunnar/atm/log/log.0
+  echo  exit >> /home/gunnar/atm/log/log.0
   exit 1
 fi
 
@@ -64,8 +69,8 @@ txid=$1
 repeat=`grep $txid /home/gunnar/atm/log/logtxid`
 if [ X"$repeat" != X ]
 then
-  echo duplicate transaction "$txid"  >> /home/gunnar/atm/log/logATM.0
-  echo  exit >> /home/gunnar/atm/log/logATM.0
+  echo duplicate transaction "$txid"  >> /home/gunnar/atm/log/log.0
+  echo  exit >> /home/gunnar/atm/log/log.0
   exit 1
 fi
 
@@ -73,35 +78,81 @@ fi
 # Step 2: Minimal logging
 #
 echo $txid >> /home/gunnar/atm/log/logtxid
-echo "Incoming transaction $txid" >> /home/gunnar/atm/log/logATM.0
+echo "$$ $0 Incoming transaction $txid" >> /home/gunnar/atm/log/log.0
 
 #
 # Step 3: Extract everything we need from the transaction
 #
-echo The incoming TxId is $txid and my LTC address is $myLTCAddress  >> /home/gunnar/atm/log/logATM.0
+echo "The incoming TxId is $txid and my special LTC addresses are $myLTCAddress and $myLTCAddress2"  >> /home/gunnar/atm/log/log.0
 tx=`litecoin-cli  getrawtransaction $txid`
-stuff=`litecoin-cli  decoderawtransaction $tx|egrep 'value|OP_RETURN|"L[a-z0-9A-Z]*"'| tr '\012' ' '`
 
-# stuff is now a string of the form
+#
+# There are two possibilities: Either this is a bootstrap transaction or this is a deposit to a personalised ATM address
+#
+# First possibility = deposit to a personalised ATM address
+
+#
+
+# this is not quite trivial since litecoind does not keep things in a sensible order so use join
+# if this is an ATM request, the following will output a line of the form
+#LfivT1EQQcwhnL9ab3jwYaFEzqtHkW2RXL 0.01100000 BAtTHxYhmzsQTmLGjJqCNEDi5sBKBh6vsB
+echo "$$ $0 got tx=->$tx<-" >> /home/gunnar/atm/log/log.0
+stuff=`(litecoin-cli decoderawtransaction $tx|\
+  tr '\012,' ' \012';echo "")|
+  sed -e '1,/sequence/d' -e '/vout/s:.*\[::'|
+  awk '/value/{value=$3}
+/address/{address=$3;print address,value}'|
+  tr '"' ' '|
+  sort|
+  join - db/ltc.smly.db|
+  head -1`
+echo "$$ $0 got stuff=->$stuff<-" >> /home/gunnar/atm/log/log.0
+set - $stuff
+atmLTC="$1" 
+value="$2"
+userSMLY="$3"
+echo "$$ $0 checking whether LTC address $atmLTC is a valid personalised ATM request with value $value LTC for destination ->$userSMLY<-" >> /home/gunnar/atm/log/log.0
+
+if [ "X$1" != "X" -a "X$2" != "X" -a "X$3" != "X" ] # might be
+then
+  LTCrate=`/home/gunnar/atm/ATMSERVERpickupRate`
+  echo "$$ $0 LTC address $atmLTC is a personalised ATM request with value $value LTC for destination ->$userSMLY<-" >> /home/gunnar/atm/log/log.0
+  echo "$$ $0 starting up ATMSERVERsendSMLY" "$value" "$userSMLY"  "$LTCrate" >> /home/gunnar/atm/log/log.0
+  output=`(/home/gunnar/atm/ATMSERVERsendSMLY "$value" "$userSMLY"  "$LTCrate" 2>&1)`
+  echo $output >> /home/gunnar/atm/log/log.0
+  echo "----------------------------------------------------" >> /home/gunnar/atm/log/log.0
+  exit
+fi
+
+
+# Second possibility = bootstrap transaction using an OP_RETURN
+# now for bootstrapping
+stuff=`litecoin-cli  decoderawtransaction $tx|egrep 'value|OP_RETURN|"L[a-z0-9A-Z]*"'| tr '\012' ' '`
+# for bootstrapping, stuff is now a string of the form
 # "value": 0.04500000, "Lcb1iTTGxHacPNK3rdZeyZY5y2wS7Bcn1z" "value": 0.00000000, "asm": "OP_RETURN 425257426e6337587a755044316e7266744444334650724c714a33466952575a6d68", "value": 0.74740803, "LQA7RE17tFePr57zazXXPCWK7JiooGxtTf"
 # This is exactly 11 words, and several have to be exactly one thing so just check all of that
-echo "Got stuff:" >> /home/gunnar/atm/log/logATM.0
-echo "->$stuff<-" >> /home/gunnar/atm/log/logATM.0
+echo "Got stuff:" >> /home/gunnar/atm/log/log.0
+echo "->$stuff<-" >> /home/gunnar/atm/log/log.0
 checkLen=`echo $stuff|wc -w` #should be 11
-echo "of length $checkLen" >> /home/gunnar/atm/log/logATM.0
+echo "of length $checkLen" >> /home/gunnar/atm/log/log.0
 if [ "$checkLen" -ne "11" ]
 then
-  echo wrong input, got "$checkLen" but wanted "11" - exit >> /home/gunnar/atm/log/logATM.0
+  echo wrong input, got "$checkLen" but wanted "11" - exit >> /home/gunnar/atm/log/log.0
   exit 1
 fi
 # Now have exactly 11 words
 set - $stuff
-echo 1 $1 2 $2 3 $3 4 $4 5 $5 6 $6 7 $7 8 $8 9 $9 10 $10 >> /home/gunnar/atm/log/logATM.0
+echo 1 $1 2 $2 3 $3 4 $4 5 $5 6 $6 7 $7 8 $8 9 $9 10 $10 >> /home/gunnar/atm/log/log.0
 
 #if [ $1 != '"value":'  -o $2 != "0.04500000," -o $3 != '"'"$myLTCAddress"'"' -o $7 != '"OP_RETURN' ] # restricte the LTC value
-if [ $1 != '"value":'  -o $3 != '"'"$myLTCAddress"'"' -o $7 != '"OP_RETURN' ]
+if [ $1 != '"value":'   -o $7 != '"OP_RETURN' ]
 then
-  echo wrong input - exit >> /home/gunnar/atm/log/logATM.0
+  echo wrong input - exit >> /home/gunnar/atm/log/log.0
+  exit 1
+fi
+if [ $3 != '"'"$myLTCAddress"'"' -a $3 != '"'"$myLTCAddress2"'"' ]
+then
+  echo wrong input - exit >> /home/gunnar/atm/log/log.0
   exit 1
 fi
 
@@ -114,7 +165,7 @@ OK=`echo $amountLTC|awk '/^[0-9\.]+$/{OK=0;if($1>0&&$1<=1)OK=1;print OK}'`
 echo "Got OK=$OK"
 if [ "$OK" != "1" ]
 then
-  echo "ERROR in $txid -- got amountLTC: ->$amountLTC<- --> must be between 0 and 1 LTC" >> /home/gunnar/atm/log/logATM.0
+  echo "ERROR in $txid -- got amountLTC: ->$amountLTC<- --> must be between 0 and 1 LTC" >> /home/gunnar/atm/log/log.0
   exit 1
 fi
 
@@ -123,25 +174,26 @@ fi
 rate=5000000
 if [ X"$ltcPrice" != X -a X"$smlyPrice" != X ]
 then
-  echo "About to compute the rate based on x=$ltcPrice/$smlyPrice;x" >> /home/gunnar/atm/log/logATM.0
-  rate=`echo "x=0.99*$ltcPrice/$smlyPrice;x" |bc` # SMLY per LTC
-  echo "Got rate: $rate" >> /home/gunnar/atm/log/logATM.0
+  echo "About to compute the rate based on x=$ltcPrice/$smlyPrice;x" >> /home/gunnar/atm/log/log.0
+  rate=`echo "x=0.95*$ltcPrice/$smlyPrice;x" |bc` # SMLY per LTC
+  echo "Got rate: $rate" >> /home/gunnar/atm/log/log.0
 fi
 # rate=0.000001  # LTC per SMLY
 #amountSMLY=`echo $amountLTC / $rate | bc`
 # MISSING here is a check in whether the rate is actually a nonzero number
-echo "About to compute the amountSMLY based on $amountLTC * $rate  " >> /home/gunnar/atm/log/logATM.0
+echo "About to compute the amountSMLY based on $amountLTC * $rate  " >> /home/gunnar/atm/log/log.0
 amountSMLY=`echo "$amountLTC * $rate" | bc`
-echo "Recipient address (hex): $8" >> /home/gunnar/atm/log/logATM.0
-echo Recipient address: $recipientSMLYAddress >> /home/gunnar/atm/log/logATM.0
-echo "Amount LTC $amountLTC" >> /home/gunnar/atm/log/logATM.0
-echo "Amount SMLY $amountSMLY" >> /home/gunnar/atm/log/logATM.0
-echo AOK >> /home/gunnar/atm/log/logATM.0
+echo "Recipient address (hex): $8" >> /home/gunnar/atm/log/log.0
+echo Recipient address: $recipientSMLYAddress >> /home/gunnar/atm/log/log.0
+echo "Amount LTC $amountLTC" >> /home/gunnar/atm/log/log.0
+echo "Amount SMLY $amountSMLY" >> /home/gunnar/atm/log/log.0
+echo AOK >> /home/gunnar/atm/log/log.0
 
-echo "About to do the transfer"  >> /home/gunnar/atm/log/logATM.0
-echo smileycoin-cli  sendtoaddress $recipientSMLYAddress $amountSMLY >> /home/gunnar/atm/log/logATM.0
-echo with output: >> /home/gunnar/atm/log/logATM.0
+# probably should validate - but then again it doesn't really matter...
+echo "About to do the transfer"  >> /home/gunnar/atm/log/log.0
+echo smileycoin-cli  sendtoaddress $recipientSMLYAddress $amountSMLY >> /home/gunnar/atm/log/log.0
+echo with output: >> /home/gunnar/atm/log/log.0
 #echo Hit return to actually do the transfer
 #read ans
-(smileycoin-cli  sendtoaddress $recipientSMLYAddress $amountSMLY 2>&1) >> /home/gunnar/atm/log/logATM.0
-echo  normal exit - end  >> /home/gunnar/atm/log/logATM.0
+(smileycoin-cli  sendtoaddress $recipientSMLYAddress $amountSMLY 2>&1) >> /home/gunnar/atm/log/log.0
+echo  normal exit - end  >> /home/gunnar/atm/log/log.0

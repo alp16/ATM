@@ -119,6 +119,7 @@ then
     if [ X"$1 $2" = X"Buy LTC" ]
     then 
        recipient="$3"  # recipient is a LTC address
+       SMLYvalue=$value
        echo "$$ $0 We have a request to buy LTC for $value SMLY - so verify the address" >> /home/gunnar/atm/log/log.0
        ans=`litecoin-cli  validateaddress "$recipient" |grep isvalid|grep true|wc -l`
        echo -n 3 >> /home/gunnar/atm/log/log.0
@@ -129,9 +130,27 @@ then
          exit 0
        fi
        # We have a valid request for LTC 
-       echo $$ $0 computing "valueLTC echo scale=8;$value / $LTCrate" >> /home/gunnar/atm/log/log.0
-       valueLTC=`echo "scale=8;x=$value / $LTCrate;if(x<1) print 0; x"|bc` # createrawtransaction needs 0., not just .
-       echo "$$ $0 Starting up a transfer of ->$valueLTC<- LTC for ->$value<- SMLY"  >> /home/gunnar/atm/log/log.0
+       echo "$$ $0 adding nonlinearity" >> /home/gunnar/atm/log/log.0
+       SMLYstash=`smileycoin-cli getbalance`
+       LTCstash=`litecoin-cli getbalance`
+       # don't exceed the stash
+       if [ $value -gt $SMLYstash ]
+       then
+         newLTCrate=`echo "$LTCrate / 1000"|bc`
+       else
+         newLTCrate=`echo " $LTCrate * ( 1- $SMLYvalue / $SMLYstash  )"|bc`
+       fi
+       echo "$$ $0 proposed new rate $newLTCrate" >> /home/gunnar/atm/log/log.0
+       
+
+       echo "$$ $0 computing "valueLTC echo scale=8;0.9*$SMLYvalue / $LTCrate" >> /home/gunnar/atm/log/log.0
+       valueLTC=`echo "scale=8;x=0.9*$SMLYvalue / $LTCrate;if(x<1) print 0; x"|bc` # createrawtransaction needs 0., not just .
+       # don't exceed the stash
+       if [ $valueLTC -gt $LTCstash ]
+       then
+         valueLTC=`echo "$LTCstash*0.01"| bc` 
+       fi
+       echo "$$ $0 Starting up a transfer of ->$valueLTC<- LTC for ->$SMLYvalue<- SMLY"  >> /home/gunnar/atm/log/log.0
        
        echo $$ litecoin-cli  sendtoaddress $recipient $valueLTC >> /home/gunnar/atm/log/log.0
        output=`(litecoin-cli  sendtoaddress $recipient $valueLTC 2>&1)`

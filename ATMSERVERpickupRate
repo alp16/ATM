@@ -18,8 +18,8 @@ amountLTC=1
 rate=5000000
 if [ X"$ltcPrice" != X -a X"$smlyPrice" != X ]
 then
-  echo "$$ $0 About to compute the rate based on x=0.9*$ltcPrice/$smlyPrice;x" >> /home/gunnar/atm/log/log.0
-  rate=`echo "x=0.9*$ltcPrice/$smlyPrice;x" |bc` # SMLY per LTC
+  echo "$$ $0 About to compute the point rate based on x=$ltcPrice/$smlyPrice;x" >> /home/gunnar/atm/log/log.0
+  rate=`echo "x=$ltcPrice/$smlyPrice;x" |bc` # SMLY per LTC
 fi
 echo "$$ $0 Got rate: $rate" >> /home/gunnar/atm/log/log.0
 # rate=0.000001  # LTC per SMLY

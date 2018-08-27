@@ -116,6 +116,10 @@ echo "$$ $0 checking whether LTC address $atmLTC is a valid personalised ATM req
 if [ "X$1" != "X" -a "X$2" != "X" -a "X$3" != "X" ] # might be
 then
   LTCrate=`/home/gunnar/atm/ATMSERVERpickupRate`
+  #
+  # MEMO
+  # Need to add the nonlinearity in price right here!!
+  #
   echo "$$ $0 LTC address $atmLTC is a personalised ATM request with value $value LTC for destination ->$userSMLY<-" >> /home/gunnar/atm/log/log.0
   echo "$$ $0 starting up ATMSERVERsendSMLY" "$value" "$userSMLY"  "$LTCrate" >> /home/gunnar/atm/log/log.0
   output=`(/home/gunnar/atm/ATMSERVERsendSMLY "$value" "$userSMLY"  "$LTCrate" 2>&1)`
